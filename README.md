@@ -93,7 +93,8 @@ The application features an intuitive interface organized into tabs:
 
 <div align="center">
   <i>Made with ❤️ and OpenGL magic</i>
-
+  <br>
+  <br>
   <img src="https://media1.tenor.com/m/aGA-AhVPXS0AAAAd/gato-enojado-insano-waza.gif" alt="cat" width="200px">
 </div>
 
