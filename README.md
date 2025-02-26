@@ -20,29 +20,35 @@
 
 ## 🚀 Features
 
-<table>
-  <tr>
-    <td width="50%">
-      <h3>Current Features</h3>
-      <ul>
-        <li>🎥 <b>Real-time 3D rendering</b> with customizable camera</li>
-        <li>🎨 <b>Advanced color grading</b> using 1D and 3D CLUTs</li>
-        <li>✨ <b>HDR rendering</b> with multiple tone mapping operators</li>
-        <li>🔄 <b>Split-screen comparison</b> for before/after views</li>
-        <li>🖌️ <b>Modern UI</b> powered by Dear ImGui</li>
-      </ul>
-    </td>
-    <td width="50%">
-      <h3>Coming Soon</h3>
-      <ul>
-        <li>📝 <b>CLUT editor</b> for creating custom color grades</li>
-        <li>📤 <b>CLUT import/export</b> supporting industry formats</li>
-        <li>📊 <b>Performance metrics</b> and optimization tools</li>
-        <li>🔍 <b>Advanced shader effects</b> library</li>
-      </ul>
-    </td>
-  </tr>
-</table>
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" width="50%">
+        <h3>Current Features</h3>
+        <div align="left">
+          <ul>
+            <li>🎥 <b>Real-time 3D rendering</b> with customizable camera</li>
+            <li>🎨 <b>Advanced color grading</b> using 1D and 3D CLUTs</li>
+            <li>✨ <b>HDR rendering</b> with multiple tone mapping operators</li>
+            <li>🔄 <b>Split-screen comparison</b> for before/after views</li>
+            <li>🖌️ <b>Modern UI</b> powered by Dear ImGui</li>
+          </ul>
+        </div>
+      </td>
+      <td align="center" width="50%">
+        <h3>Coming Soon</h3>
+        <div align="left">
+          <ul>
+            <li>📝 <b>CLUT editor</b> for creating custom color grades</li>
+            <li>📤 <b>CLUT import/export</b> supporting industry formats</li>
+            <li>📊 <b>Performance metrics</b> and optimization tools</li>
+            <li>🔍 <b>Advanced shader effects</b> library</li>
+          </ul>
+        </div>
+      </td>
+    </tr>
+  </table>
+</div>
 
 ## 🛠️ Getting Started
 
