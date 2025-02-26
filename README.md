@@ -14,9 +14,9 @@
 
 ## ✨ Overview
 
-**RenderAlchemy** is a powerful OpenGL-based renderer that serves as my personal laboratory for experimenting with cutting-edge post-processing effects and color grading techniques. It provides a real-time environment where visual alchemy happens!
+**RenderAlchemy** is a OpenGL-based renderer that serves as my personal laboratory for experimenting with post-processing effects and color grading techniques.
 
-> *"Coming soon: Where pixels are transformed into visual gold!"* 🔮
+> *"Coming soon to a toaster near you!"* 🔮
 
 ## 🚀 Features
 
