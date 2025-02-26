@@ -396,7 +396,7 @@ GLFWwindow* initializeWindow()
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
 	// Create window
-	GLFWwindow* window = glfwCreateWindow(windowWidth, windowHeight, "Enhanced CLUT Tone Mapping Demo", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(windowWidth, windowHeight, "Render Alchemy", NULL, NULL);
 	if (!window)
 	{
 		std::cerr << "Failed to create GLFW window" << std::endl;
