@@ -1,28 +1,50 @@
-# RenderAlchemy
+<div align="center">
+  
+# 🧪 RenderAlchemy 🧪
 
-![License](https://img.shields.io/badge/license-MIT-blue)
-![OpenGL](https://img.shields.io/badge/OpenGL-3.3-green)
-![C++](https://img.shields.io/badge/C%2B%2B-17-orange)
+### _Transform Your Renders with Digital Alchemy_
 
-A modern OpenGL-based renderer for experimenting with post-processing effects and color grading techniques.
+[![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
+[![OpenGL](https://img.shields.io/badge/OpenGL-3.3-brightgreen?style=for-the-badge&logo=opengl)](https://www.opengl.org/)
+[![C++](https://img.shields.io/badge/C%2B%2B-17-orange?style=for-the-badge&logo=c%2B%2B)](https://isocpp.org/)
 
-![RenderAlchemy Preview](docs/preview.png)
+<img src="docs/preview.png" alt="RenderAlchemy Preview" width="800px">
 
-## Overview
+</div>
 
-RenderAlchemy serves as a testbed for me to experiment with various rendering techniques and effects. The application is built using modern OpenGL and provides a real-time 3D rendering environment with advanced post-processing capabilities, well it will be in the future. :D
+## ✨ Overview
 
-## Features
+**RenderAlchemy** is a powerful OpenGL-based renderer that serves as my personal laboratory for experimenting with cutting-edge post-processing effects and color grading techniques. It provides a real-time environment where visual alchemy happens!
 
-- **Real-time 3D rendering** with adjustable camera and scene objects
-- **Advanced color grading** with both 1D and 3D CLUTs
-- **HDR rendering** with multiple tone mapping operators
-- **CLUT editor** for creating custom color grades
-- **Split-screen comparison** for before/after visualization
-- **Modern UI** built with Dear ImGui
-- **CLUT import/export** supporting industry-standard formats **WIP**
+> *"Coming soon: Where pixels are transformed into visual gold!"* 🔮
 
-## Getting Started
+## 🚀 Features
+
+<table>
+  <tr>
+    <td width="50%">
+      <h3>Current Features</h3>
+      <ul>
+        <li>🎥 <b>Real-time 3D rendering</b> with customizable camera</li>
+        <li>🎨 <b>Advanced color grading</b> using 1D and 3D CLUTs</li>
+        <li>✨ <b>HDR rendering</b> with multiple tone mapping operators</li>
+        <li>🔄 <b>Split-screen comparison</b> for before/after views</li>
+        <li>🖌️ <b>Modern UI</b> powered by Dear ImGui</li>
+      </ul>
+    </td>
+    <td width="50%">
+      <h3>Coming Soon</h3>
+      <ul>
+        <li>📝 <b>CLUT editor</b> for creating custom color grades</li>
+        <li>📤 <b>CLUT import/export</b> supporting industry formats</li>
+        <li>📊 <b>Performance metrics</b> and optimization tools</li>
+        <li>🔍 <b>Advanced shader effects</b> library</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+## 🛠️ Getting Started
 
 ### Prerequisites
 
@@ -31,27 +53,43 @@ RenderAlchemy serves as a testbed for me to experiment with various rendering te
 
 ### Building the Project
 
-1. Clone the repository:
-```
-git clone https://github.com/yourusername/RenderAlchemy.git
-```
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/yourusername/RenderAlchemy.git
+   ```
 
-2. Open the project in Visual Studio:
-```
-Open RenderAlchemy.sln
-```
+2. **Open the project:**
+   ```bash
+   Open RenderAlchemy.sln in Visual Studio
+   ```
 
-### Running the Application
+3. **Build and run the solution**
 
-Launch `RenderAlchemy.exe` from the build directory. The application will display a 3D scene with various controls for adjusting rendering parameters and post-processing effects.
+## 🎮 Controls & Interface
 
-## Controls
+The application features an intuitive interface organized into tabs:
 
-The application interface is organized into tabs for easy navigation:
+| Tab | Description |
+|-----|-------------|
+| 🌍 **Scene** | Configure 3D scene, camera position, and lighting |
+| 🔆 **Tone Mapping** | Fine-tune exposure and tone mapping parameters |
+| 🎨 **CLUT Selection** | Choose from preset CLUTs or load custom ones |
+| ✏️ **CLUT Editing** | Create and modify color lookup tables |
+| ℹ️ **Help** | Access usage instructions and information |
 
-- **Scene**: Configure the 3D scene, camera position, and lighting
-- **Tone Mapping**: Adjust exposure and tone mapping settings
-- **CLUT Selection**: Choose from preset CLUTs or load custom ones
-- **CLUT Editing**: Create and modify color lookup tables
-- **Help**: View usage instructions and information
+## 📸 Screenshots
+
+<div align="center">
+  <i>Screenshots coming soon!</i>
+</div>
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+---
+
+<div align="center">
+  <i>Made with ❤️ and OpenGL magic</i>
+</div>
 
