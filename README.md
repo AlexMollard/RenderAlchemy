@@ -2,8 +2,6 @@
   
 # 🧪 RenderAlchemy 🧪
 
-### _Transform Your Renders with Digital Alchemy_
-
 [![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 [![OpenGL](https://img.shields.io/badge/OpenGL-3.3-brightgreen?style=for-the-badge&logo=opengl)](https://www.opengl.org/)
 [![C++](https://img.shields.io/badge/C%2B%2B-17-orange?style=for-the-badge&logo=c%2B%2B)](https://isocpp.org/)
@@ -82,10 +80,6 @@ The application features an intuitive interface organized into tabs:
 <div align="center">
   <i>Screenshots coming soon!</i>
 </div>
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
 
 ---
 
