@@ -1,98 +1,118 @@
 #include "Framebuffer.h"
 
 #include <iostream>
+#include <vector>
 
-#include "GLUtils.h"
+#include "BgfxUtils.h"
+
+uint8_t Framebuffer::nextViewId = 1; // View 0 is reserved for main view
 
 Framebuffer::Framebuffer()
-      : FBO(0), colorTexture(0), RBO(0), width(0), height(0), useHDR(true)
+    : framebufferHandle(BGFX_INVALID_HANDLE),
+      colorTexture(BGFX_INVALID_HANDLE),
+      depthTexture(BGFX_INVALID_HANDLE),
+      width(0),
+      height(0),
+      useHDR(true),
+      viewId(0)
 {
 }
 
 Framebuffer::~Framebuffer()
 {
-	cleanup();
+    cleanup();
 }
 
 void Framebuffer::cleanup()
 {
-	if (FBO != 0)
-	{
-		glDeleteFramebuffers(1, &FBO);
-		FBO = 0;
-	}
-
-	if (colorTexture != 0)
-	{
-		glDeleteTextures(1, &colorTexture);
-		colorTexture = 0;
-	}
-
-	if (RBO != 0)
-	{
-		glDeleteRenderbuffers(1, &RBO);
-		RBO = 0;
-	}
+    if (bgfx::isValid(framebufferHandle)) {
+        bgfx::destroy(framebufferHandle);
+        framebufferHandle = BGFX_INVALID_HANDLE;
+    }
+    
+    // In bgfx, destroying a framebuffer also destroys its attachments,
+    // so we don't need to explicitly destroy color and depth textures
+    colorTexture = BGFX_INVALID_HANDLE;
+    depthTexture = BGFX_INVALID_HANDLE;
 }
 
 void Framebuffer::create(int width, int height, bool useHDR)
 {
-	cleanup();
+    cleanup();
 
-	this->width = width;
-	this->height = height;
-	this->useHDR = useHDR;
-
-	// Create framebuffer
-	glGenFramebuffers(1, &FBO);
-	glBindFramebuffer(GL_FRAMEBUFFER, FBO);
-
-	// Create texture attachment
-	glGenTextures(1, &colorTexture);
-	glBindTexture(GL_TEXTURE_2D, colorTexture);
-
-	// Choose format based on HDR setting
-	if (useHDR)
-	{
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, NULL);
-	}
-	else
-	{
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-	}
-
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0);
-
-	// Create renderbuffer object for depth and stencil attachment
-	glGenRenderbuffers(1, &RBO);
-	glBindRenderbuffer(GL_RENDERBUFFER, RBO);
-	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
-	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, RBO);
-
-	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-	{
-		std::cerr << "ERROR: Framebuffer is not complete!" << std::endl;
-	}
-
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    this->width = width;
+    this->height = height;
+    this->useHDR = useHDR;
+    
+    // Assign a unique view ID for this framebuffer
+    this->viewId = nextViewId++;
+    
+    // Set up texture formats
+    bgfx::TextureFormat::Enum colorFormat = useHDR 
+        ? bgfx::TextureFormat::RGBA16F 
+        : bgfx::TextureFormat::RGBA8;
+    
+    // Create textures with proper flags
+    uint64_t textureFlags = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+    
+    // Set up textures for the framebuffer
+    bgfx::TextureHandle textures[2];
+    
+    // Create color attachment
+    textures[0] = bgfx::createTexture2D(
+        uint16_t(width),
+        uint16_t(height),
+        false,
+        1,
+        colorFormat,
+        textureFlags
+    );
+    colorTexture = textures[0];
+    
+    // Create depth attachment
+    textures[1] = bgfx::createTexture2D(
+        uint16_t(width),
+        uint16_t(height),
+        false,
+        1,
+        bgfx::TextureFormat::D24S8,
+        textureFlags
+    );
+    depthTexture = textures[1];
+    
+    // Create framebuffer from textures
+    framebufferHandle = bgfx::createFrameBuffer(2, textures, true);
+    
+    if (!bgfx::isValid(framebufferHandle)) {
+        std::cerr << "ERROR: Failed to create framebuffer!" << std::endl;
+    }
+    
+    // Set up the view for this framebuffer
+    bgfx::setViewFrameBuffer(viewId, framebufferHandle);
+    bgfx::setViewRect(viewId, 0, 0, uint16_t(width), uint16_t(height));
+    bgfx::setViewClear(viewId, 
+                      BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 
+                      0x303030ff, // Dark gray
+                      1.0f,
+                      0);
 }
 
 void Framebuffer::resize(int width, int height)
 {
-	create(width, height, useHDR); // Recreate with new dimensions
+    create(width, height, useHDR); // Recreate with new dimensions
 }
 
 void Framebuffer::bind() const
 {
-	glBindFramebuffer(GL_FRAMEBUFFER, FBO);
+    // In bgfx, we don't directly bind framebuffers like in OpenGL.
+    // Instead, we set the current view ID and the framebuffer is associated with that view.
+    bgfx::setViewFrameBuffer(viewId, framebufferHandle);
+    bgfx::setViewRect(viewId, 0, 0, uint16_t(width), uint16_t(height));
+    bgfx::touch(viewId); // Make sure the view is processed this frame
 }
 
 void Framebuffer::unbind() const
 {
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    // In bgfx, switching views is equivalent to switching framebuffers
+    // No explicit unbind needed
 }

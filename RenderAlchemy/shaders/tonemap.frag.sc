@@ -1,19 +1,15 @@
-#version 330 core
-in vec2 TexCoord;
-out vec4 FragColor;
+$input v_texcoord0
 
-uniform sampler2D hdrBuffer;
-uniform sampler1D colorLUT1D;
-uniform sampler3D colorLUT3D;
-uniform float exposure;
-uniform float clutStrength;
-uniform int tonemapOperator;
-uniform bool splitScreen;
-uniform float splitPosition;
-uniform bool showClut;
-uniform bool applyClut;
-uniform bool use3DCLUT;
-uniform int clutSize;
+#include <bgfx_shader.sh>
+
+// Uniforms
+uniform vec4 u_params;          // x: exposure, y: clutStrength, z: tonemapOperator, w: splitPosition
+uniform vec4 u_flags;           // x: splitScreen, y: showClut, z: applyClut, w: use3DCLUT
+uniform vec4 u_clutParams;      // x: clutSize
+
+SAMPLER2D(s_hdrBuffer, 0);
+SAMPLER1D(s_colorLUT1D, 1);
+SAMPLER3D(s_colorLUT3D, 2);
 
 vec3 reinhardTonemap(vec3 hdrColor) {
     return hdrColor / (hdrColor + vec3(1.0));
@@ -36,10 +32,10 @@ vec3 apply1DCLUT(vec3 color) {
     luminance = clamp(luminance, 0.0, 1.0);
     
     // Sample the CLUT
-    vec3 clutColor = texture(colorLUT1D, luminance).rgb;
+    vec3 clutColor = texture2DLod(s_colorLUT1D, vec2(luminance, 0.0), 0.0).rgb;
     
     // Blend between original and CLUT mapped colors
-    return mix(color, clutColor, clutStrength);
+    return mix(color, clutColor, u_params.y); // clutStrength
 }
 
 vec3 apply3DCLUT(vec3 color) {
@@ -47,7 +43,7 @@ vec3 apply3DCLUT(vec3 color) {
     color = clamp(color, 0.0, 1.0);
     
     // Adjust the texture coordinates to sample at the center of each texel
-    float size = float(clutSize);
+    float size = u_clutParams.x;
     float halfPixel = 0.5 / size;
     
     // Scale and offset to properly sample the 3D texture
@@ -55,31 +51,31 @@ vec3 apply3DCLUT(vec3 color) {
     vec3 offset = vec3(halfPixel);
     
     // Sample the 3D CLUT with corrected coordinates
-    vec3 clutColor = texture(colorLUT3D, color * scale + offset).rgb;
+    vec3 clutColor = texture3DLod(s_colorLUT3D, color * scale + offset, 0.0).rgb;
     
     // Blend between original and CLUT mapped colors
-    return mix(color, clutColor, clutStrength);
+    return mix(color, clutColor, u_params.y); // clutStrength
 }
 
 void main() {
     // Get position for split screen logic
-    float screenPosition = TexCoord.x;
+    float screenPosition = v_texcoord0.x;
     
     // Get HDR color from the framebuffer
-    vec3 hdrColor = texture(hdrBuffer, TexCoord).rgb;
+    vec3 hdrColor = texture2D(s_hdrBuffer, v_texcoord0).rgb;
     
     // Apply tone mapping based on selected operator
     vec3 mapped;
-    if (tonemapOperator == 0) {
-        mapped = reinhardTonemap(hdrColor * exposure);
+    if (u_params.z < 0.5) { // tonemapOperator == 0
+        mapped = reinhardTonemap(hdrColor * u_params.x); // exposure
     } else {
-        mapped = acesTonemap(hdrColor * exposure);
+        mapped = acesTonemap(hdrColor * u_params.x); // exposure
     }
     
     // Apply color grading with CLUT if enabled
     vec3 finalColor = mapped;
-    if (applyClut) {
-        if (use3DCLUT) {
+    if (u_flags.z > 0.5) { // applyClut
+        if (u_flags.w > 0.5) { // use3DCLUT
             finalColor = apply3DCLUT(mapped);
         } else {
             finalColor = apply1DCLUT(mapped);
@@ -87,34 +83,36 @@ void main() {
     }
     
     // Split screen visualization if enabled
-    if (splitScreen && screenPosition > splitPosition) {
+    if (u_flags.x > 0.5 && screenPosition > u_params.w) { // splitScreen && screenPosition > splitPosition
         finalColor = mapped; // Show without CLUT on right side
     }
     
     // For 1D CLUT visualization
-    if (showClut && !use3DCLUT && TexCoord.y < 0.05 && TexCoord.x >= 0.05 && TexCoord.x <= 0.95) {
+    if (u_flags.y > 0.5 && u_flags.w < 0.5 && v_texcoord0.y < 0.05 && v_texcoord0.x >= 0.05 && v_texcoord0.x <= 0.95) {
+        // showClut && !use3DCLUT
         // Scale x position to sample the CLUT
-        float clutPos = clamp((TexCoord.x - 0.05) / 0.9, 0.0, 1.0);
-        finalColor = texture(colorLUT1D, clutPos).rgb;
+        float clutPos = clamp((v_texcoord0.x - 0.05) / 0.9, 0.0, 1.0);
+        finalColor = texture2DLod(s_colorLUT1D, vec2(clutPos, 0.0), 0.0).rgb;
     }
     
     // For 3D CLUT visualization (shows a slice)
-    if (showClut && use3DCLUT && TexCoord.y < 0.1 && TexCoord.x < 0.3) {
+    if (u_flags.y > 0.5 && u_flags.w > 0.5 && v_texcoord0.y < 0.1 && v_texcoord0.x < 0.3) {
+        // showClut && use3DCLUT
         // Create a visualization of the 3D CLUT 
         // (using x and y to show a slice at a fixed blue level)
         vec3 clutCoord;
-        clutCoord.r = clamp(TexCoord.x / 0.3, 0.0, 1.0);
-        clutCoord.g = clamp(TexCoord.y / 0.1, 0.0, 1.0);
+        clutCoord.r = clamp(v_texcoord0.x / 0.3, 0.0, 1.0);
+        clutCoord.g = clamp(v_texcoord0.y / 0.1, 0.0, 1.0);
         clutCoord.b = 0.5; // middle slice for visualization
         
         // Adjust for texel centers
-        float size = float(clutSize);
+        float size = u_clutParams.x;
         float halfPixel = 0.5 / size;
         vec3 scale = vec3((size - 1.0) / size);
         vec3 offset = vec3(halfPixel);
         
-        finalColor = texture(colorLUT3D, clutCoord * scale + offset).rgb;
+        finalColor = texture3DLod(s_colorLUT3D, clutCoord * scale + offset, 0.0).rgb;
     }
     
-    FragColor = vec4(finalColor, 1.0);
+    gl_FragColor = vec4(finalColor, 1.0);
 }

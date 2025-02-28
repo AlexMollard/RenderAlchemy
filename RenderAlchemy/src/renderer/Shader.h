@@ -1,39 +1,24 @@
 #pragma once
 
-#include <GL/glew.h>
+#include <bgfx/bgfx.h>
+#include <bgfx/platform.h>
+#include <unordered_map>
 #include <string>
 
-class Shader
-{
+class Shader {
 public:
-	Shader();
-	~Shader();
+    Shader(const std::string& vertexPath, const std::string& fragmentPath);
+    ~Shader();
 
-	// Create shader from source strings
-	bool createFromStrings(const char* vertexCode, const char* fragmentCode);
-	bool createFromPaths(const char* vertexPath, const char* fragmentPath);
+    void setUniform(const std::string& name, const void* value, uint16_t num = 1);
+	void setTexture(const std::string& name, bgfx::TextureHandle texture, uint8_t stage = 0);
 
-	// Use the shader program
-	void use() const;
-
-	// Get shader program ID
-	GLuint getProgramID() const;
-
-	// Uniform setters
-	void setBool(const char* name, bool value) const;
-	void setInt(const char* name, int value) const;
-	void setFloat(const char* name, float value) const;
-	void setVec2(const char* name, float x, float y) const;
-	void setVec3(const char* name, float x, float y, float z) const;
-	void setVec4(const char* name, float x, float y, float z, float w) const;
-	void setMat4(const char* name, const float* value) const;
-
-	GLint getUniformLocation(const char* name) const;
-
+    bgfx::ProgramHandle m_program;
 private:
-	GLuint programID;
+    std::unordered_map<std::string, bgfx::UniformHandle> m_uniforms;
 
-	// Helper functions
-	void compileShader(const char* vertexCode, const char* fragmentCode);
-	void checkCompileErrors(GLuint shader, std::string type);
+    bgfx::ShaderHandle loadShader(const std::string& path);
+    void compileShader(const std::string& path, const std::string& output);
+    bgfx::UniformHandle getUniform(const std::string& name);
 };
+

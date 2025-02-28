@@ -1,30 +1,32 @@
 #include <cmath>
 #include <fstream>
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
-#include <imgui.h>
-#include <imgui_impl_glfw.h>
-#include <imgui_impl_opengl3.h>
 #include <iostream>
 #include <map>
 #include <sstream>
 #include <string>
 #include <vector>
 
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+
+#define GLFW_EXPOSE_NATIVE_WIN32
+#define GLFW_EXPOSE_NATIVE_WGL
+#include <GLFW/glfw3native.h>
+
 #include "clut/clut.h"
 #include "fonts/IconsLucide.h"
+#include "imgui/imgui_impl_bgfx.h"
+#include "renderer/BgfxUtils.h"
 #include "renderer/Framebuffer.h"
 #include "renderer/Geometry.h"
-#include "renderer/GLUtils.h"
 #include "renderer/Shader.h"
-#include "ui/ImGuiUtils.h" // Add the new header
+#include "ui/ImGuiUtils.h"
 
 // Forward declarations
-GLFWwindow* initializeWindow();
-void framebufferSizeCallback(GLFWwindow* window, int width, int height);
+void framebufferSizeCallback(int width, int height);
 void processInput(GLFWwindow* window);
-void initImGui(GLFWwindow* window);
-void renderImGuiInterface(std::map<std::string, CLUT>& clutLibrary, CLUT& currentClut, const char*& currentPreset, GLuint& clut1DTexture, GLuint& clut3DTexture, bool& use3DCLUT, char* customLutName, bool& editingMode, float* cameraPos);
+void initImGui();
+void renderImGuiInterface(std::map<std::string, CLUT>& clutLibrary, CLUT& currentClut, const char*& currentPreset, bgfx::TextureHandle& clut1DTexture, bgfx::TextureHandle& clut3DTexture, bool& use3DCLUT, char* customLutName, bool& editingMode, float* cameraPos);
 
 // Global variables
 int windowWidth = 1280;
@@ -69,24 +71,57 @@ bool showAboutWindow = false;
 bool showToolsWindow = true;
 bool showPreferencesWindow = false;
 
+// For bgfx view IDs
+constexpr uint8_t kSceneView = 0;
+constexpr uint8_t kPostProcessView = 1;
+
+static void* glfwNativeWindowHandle(GLFWwindow* _window)
+{
+	return glfwGetWin32Window(_window);
+}
+
 int main()
 {
-	// Initialize window
-	GLFWwindow* window = initializeWindow();
-	if (!window)
+	// Create a native window for bgfx using glfw
+	if (!glfwInit())
+	{
+		std::cerr << "Failed to initialize GLFW" << std::endl;
 		return -1;
+	}
+
+	// Set OpenGL version to 4.3
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+	// Create a windowed mode window and its OpenGL context
+	GLFWwindow* window = glfwCreateWindow(windowWidth, windowHeight, "RenderAlchemy", NULL, NULL);
+	if (!window)
+	{
+		std::cerr << "Failed to create GLFW window" << std::endl;
+		glfwTerminate();
+		return -1;
+	}
+
+	// Make the window's context current
+	glfwMakeContextCurrent(window);
+
+	// Initialize bgfx
+	if (!BgfxUtils::init(windowWidth, windowHeight, glfwNativeWindowHandle(window)))
+	{
+		std::cerr << "Failed to initialize bgfx" << std::endl;
+		return -1;
+	}
 
 	// Initialize ImGui
-	initImGui(window);
+	initImGui();
 
 	// Create shader programs
 	std::cout << "Creating shader programs..." << std::endl;
 	std::cout << "Scene shader compiling" << std::endl;
-	Shader sceneShader;
-	sceneShader.createFromPaths("shaders/scene.vert", "shaders/scene.frag");
+	Shader sceneShader("shaders/scene.vert.sc", "shaders/scene.frag.sc");
 	std::cout << "Tonemap shader compiling" << std::endl;
-	Shader tonemapShader;
-	tonemapShader.createFromPaths("shaders/tonemap.vert", "shaders/tonemap.frag");
+	Shader tonemapShader("shaders/tonemap.vert.sc", "shaders/tonemap.frag.sc");
 
 	// Create CLUT library with presets
 	std::map<std::string, CLUT> clutLibrary;
@@ -95,12 +130,34 @@ int main()
 
 	// Set initial CLUT to Neutral 1D
 	CLUT currentClut = clutLibrary["Neutral (1D)"];
-	GLuint clut1DTexture = currentClut.create1DTexture();
+	bgfx::TextureHandle clut1DTexture = BGFX_INVALID_HANDLE;
+	
+	// For 1D CLUT (Creating the bgfx texture)
+	std::vector<float> clutDataWithAlpha(currentClut.getSize() * 4);
+	for (int i = 0; i < currentClut.getSize(); ++i) {
+		clutDataWithAlpha[i * 4 + 0] = currentClut.getData()[i * 3 + 0];
+		clutDataWithAlpha[i * 4 + 1] = currentClut.getData()[i * 3 + 1];
+		clutDataWithAlpha[i * 4 + 2] = currentClut.getData()[i * 3 + 2];
+		clutDataWithAlpha[i * 4 + 3] = 1.0f; // Set alpha to 1.0
+	}
+	const bgfx::Memory* mem1D = bgfx::copy(clutDataWithAlpha.data(), clutDataWithAlpha.size() * sizeof(float));
+	clut1DTexture = bgfx::createTexture2D(currentClut.getSize(), 1, false, 1, bgfx::TextureFormat::RGBA32F, BGFX_TEXTURE_NONE, mem1D);
 
 	// Create an initial 3D CLUT texture too
 	CLUT neutral3D = clutLibrary["Neutral (3D)"];
 	neutral3D.setIs3DCLUT(true);
-	GLuint clut3DTexture = neutral3D.create3DTexture();
+	bgfx::TextureHandle clut3DTexture = BGFX_INVALID_HANDLE;
+
+	// For 3D CLUT (Creating the bgfx texture)
+	std::vector<float> clutDataWithAlpha3D(neutral3D.getSize() * neutral3D.getSize() * neutral3D.getSize() * 4);
+	for (int i = 0; i < neutral3D.getSize() * neutral3D.getSize() * neutral3D.getSize(); ++i) {
+		clutDataWithAlpha3D[i * 4 + 0] = neutral3D.getData()[i * 3 + 0];
+		clutDataWithAlpha3D[i * 4 + 1] = neutral3D.getData()[i * 3 + 1];
+		clutDataWithAlpha3D[i * 4 + 2] = neutral3D.getData()[i * 3 + 2];
+		clutDataWithAlpha3D[i * 4 + 3] = 1.0f; // Set alpha to 1.0
+	}
+	const bgfx::Memory* mem3D = bgfx::copy(clutDataWithAlpha3D.data(), clutDataWithAlpha3D.size() * sizeof(float));
+	clut3DTexture = bgfx::createTexture3D(neutral3D.getSize(), neutral3D.getSize(), neutral3D.getSize(), false, bgfx::TextureFormat::RGBA32F, BGFX_TEXTURE_NONE, mem3D);
 
 	// Track which type of CLUT is active
 	bool use3DCLUT = false;
@@ -132,21 +189,25 @@ int main()
 	bool editingMode = false;
 
 	// For tracking frame time
-	float lastFrameTime = static_cast<float>(glfwGetTime());
+	const bgfx::Stats* stats = bgfx::getStats();
+	float lastFrameTime = stats->cpuTimeBegin;
 
 	// Wireframe mode
 	bool wireframeMode = false;
 
 	// Main render loop
-	while (!glfwWindowShouldClose(window))
+	while (true)
 	{
 		// Process input
 		processInput(window);
 
 		// Calculate delta time for smooth animation
-		float currentTime = static_cast<float>(glfwGetTime());
-		float deltaTime = currentTime - lastFrameTime;
-		lastFrameTime = currentTime;
+		stats = bgfx::getStats();
+		const double toMsCpu = 1000.0 / stats->cpuTimerFreq;
+		const double toMsGpu = 1000.0 / stats->gpuTimerFreq;
+		const double frameMs = double(stats->cpuTimeFrame) * toMsCpu;
+		int64_t deltaTime = stats->cpuTimeFrame;
+		lastFrameTime = frameMs;
 
 		// Handle auto-rotation of model
 		if (autoRotateModel)
@@ -176,42 +237,40 @@ int main()
 		if (framebufferResized)
 		{
 			hdrFramebuffer.resize(windowWidth, windowHeight);
+			BgfxUtils::resize(windowWidth, windowHeight);
 			framebufferResized = false;
 		}
 
-		glPolygonMode(GL_FRONT_AND_BACK, wireframeMode ? GL_LINE : GL_FILL);
+		// Begin bgfx frame
+		BgfxUtils::beginFrame();
+
+		// Set wireframe mode if needed
+		uint64_t state = BGFX_STATE_DEFAULT;
+		if (wireframeMode)
+		{
+			state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_MSAA | BGFX_STATE_PT_LINES;
+		}
 
 		// First pass: Render scene to HDR framebuffer
 		hdrFramebuffer.bind();
-		GLUtils::checkGLError("binding HDR framebuffer");
 
-		glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		glEnable(GL_DEPTH_TEST);
-
-		// Use scene shader
-		sceneShader.use();
-		GLUtils::checkGLError("using scene shader program");
-
-		// Set light properties
-		sceneShader.setVec3("lightPos", lightPos[0], lightPos[1], lightPos[2]);
-		sceneShader.setVec3("lightColor", lightColor[0], lightColor[1], lightColor[2]);
-		sceneShader.setFloat("lightIntensity", lightIntensity);
-		sceneShader.setFloat("ambientStrength", ambientStrength);
-		sceneShader.setInt("sceneType", sceneType);
-		GLUtils::checkGLError("setting scene shader uniforms");
+		// Clear framebuffer
+		bgfx::setViewClear(kSceneView, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x0c0c0cff, 1.0f, 0);
+		bgfx::setViewRect(kSceneView, 0, 0, windowWidth, windowHeight);
 
 		// View matrix (camera)
-		float viewMatrix[16] = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, -cameraPos[0], -cameraPos[1], -cameraPos[2], 1.0f };
+		float view[16] = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, -cameraPos[0], -cameraPos[1], -cameraPos[2], 1.0f };
 
 		// Projection matrix
 		float aspectRatio = static_cast<float>(windowWidth) / windowHeight;
 		float fov = 45.0f * 3.14159f / 180.0f;
-		float near = 0.1f;
-		float far = 100.0f;
+		float nearplane = 0.1f;
+		float farplane = 100.0f;
 		float tanHalfFov = tan(fov / 2.0f);
 
-		float projectionMatrix[16] = { 1.0f / (aspectRatio * tanHalfFov), 0.0f, 0.0f, 0.0f, 0.0f, 1.0f / tanHalfFov, 0.0f, 0.0f, 0.0f, 0.0f, -(far + near) / (far - near), -1.0f, 0.0f, 0.0f, -(2.0f * far * near) / (far - near), 0.0f };
+		float proj[16] = { 1.0f / (aspectRatio * tanHalfFov), 0.0f, 0.0f, 0.0f, 0.0f, 1.0f / tanHalfFov, 0.0f, 0.0f, 0.0f, 0.0f, -(farplane + nearplane) / (farplane - nearplane), -1.0f, 0.0f, 0.0f, -(2.0f * farplane * nearplane) / (farplane - nearplane), 0.0f };
+
+		bgfx::setViewTransform(kSceneView, view, proj);
 
 		// Model matrix with rotation
 		float cosY = cos(modelRotation[1]);
@@ -221,139 +280,92 @@ int main()
 		float cosZ = cos(modelRotation[2]);
 		float sinZ = sin(modelRotation[2]);
 
-		float rotationMatrixY[16] = { cosY, 0.0f, sinY, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, -sinY, 0.0f, cosY, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f };
+		float model[16] = { 0 };
+		model[0] = cosY * cosZ;
+		model[1] = cosY * sinZ;
+		model[2] = -sinY;
+		model[4] = sinX * sinY * cosZ - cosX * sinZ;
+		model[5] = sinX * sinY * sinZ + cosX * cosZ;
+		model[6] = sinX * cosY;
+		model[8] = cosX * sinY * cosZ + sinX * sinZ;
+		model[9] = cosX * sinY * sinZ - sinX * cosZ;
+		model[10] = cosX * cosY;
+		model[15] = 1.0f;
 
-		float rotationMatrixX[16] = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, cosX, -sinX, 0.0f, 0.0f, sinX, cosX, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f };
+		// Set uniforms for scene shader
+		sceneShader.setUniform("lightPos", lightPos);
+		sceneShader.setUniform("lightColor", lightColor);
+		sceneShader.setUniform("lightIntensity", &lightIntensity);
+		sceneShader.setUniform("ambientStrength", &ambientStrength);
+		sceneShader.setUniform("sceneType", &sceneType, 1);
 
-		float rotationMatrixZ[16] = { cosZ, -sinZ, 0.0f, 0.0f, sinZ, cosZ, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f };
-
-		// Combined rotation matrix (Y * X * Z)
-		float modelMatrix[16];
-		// For simplicity, using identity matrix with translation
-		for (int i = 0; i < 16; i++)
-		{
-			modelMatrix[i] = 0.0f;
-		}
-		modelMatrix[0] = cosY * cosZ;
-		modelMatrix[1] = cosY * sinZ;
-		modelMatrix[2] = -sinY;
-		modelMatrix[4] = sinX * sinY * cosZ - cosX * sinZ;
-		modelMatrix[5] = sinX * sinY * sinZ + cosX * cosZ;
-		modelMatrix[6] = sinX * cosY;
-		modelMatrix[8] = cosX * sinY * cosZ + sinX * sinZ;
-		modelMatrix[9] = cosX * sinY * sinZ - sinX * cosZ;
-		modelMatrix[10] = cosX * cosY;
-		modelMatrix[15] = 1.0f;
-
-		// Set matrices
-		sceneShader.setMat4("model", modelMatrix);
-		sceneShader.setMat4("view", viewMatrix);
-		sceneShader.setMat4("projection", projectionMatrix);
-		GLUtils::checkGLError("setting matrix uniforms");
+		// Set transform for the model
+		bgfx::setTransform(model);
 
 		// Draw the appropriate geometry based on scene type
 		if (sceneType == 0)
 		{
-			cube.draw();
+			cube.draw(sceneShader);
 		}
 		else if (sceneType == 1)
 		{
-			sphere.draw();
+			sphere.draw(sceneShader);
 		}
 		else
 		{
-			plane.draw();
+			plane.draw(sceneShader);
 		}
 
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		GLUtils::checkGLError("binding default framebuffer");
-		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
-		GLUtils::checkGLError("clearing default framebuffer");
-		glDisable(GL_DEPTH_TEST);
-		GLUtils::checkGLError("disabling depth test");
+		// Second pass: Apply tone mapping and CLUT to the HDR image
+		hdrFramebuffer.unbind();
 
-		// Use tone mapping shader
-		tonemapShader.use();
-		GLUtils::checkGLError("using tonemap shader program");
+		// Clear the backbuffer
+		bgfx::setViewClear(kPostProcessView, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x000000ff, 1.0f, 0);
+		bgfx::setViewRect(kPostProcessView, 0, 0, windowWidth, windowHeight);
 
-		// Ensure the VAO is properly bound before drawing
-		glBindVertexArray(screenQuad.getVAO());
-		GLUtils::checkGLError("binding quad VAO");
+		// Set the orthographic projection for post-processing
+		float orthoProj[16] = { 2.0f / windowWidth, 0.0f, 0.0f, 0.0f, 0.0f, -2.0f / windowHeight, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, -1.0f, 1.0f, 0.0f, 1.0f };
 
-		// Bind HDR texture to texture unit 0
-		glActiveTexture(GL_TEXTURE0);
-		GLUtils::checkGLError("activating texture unit 0");
-		glBindTexture(GL_TEXTURE_2D, hdrFramebuffer.getColorTexture());
-		GLUtils::checkGLError("binding HDR texture");
-		tonemapShader.setInt("hdrBuffer", 0);
-		GLUtils::checkGLError("setting hdrBuffer uniform");
+		float identity[16] = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f };
 
-		// Bind appropriate CLUT texture to texture unit 1
-		glActiveTexture(GL_TEXTURE1);
-		GLUtils::checkGLError("activating texture unit 1");
+		bgfx::setViewTransform(kPostProcessView, identity, orthoProj);
 
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_1D, clut1DTexture);
-		tonemapShader.setInt("colorLUT1D", 1);
+		// Set HDR framebuffer texture
+		tonemapShader.setTexture("hdrBuffer", hdrFramebuffer.getColorTexture(), 0);
 
-		glActiveTexture(GL_TEXTURE2);
-		glBindTexture(GL_TEXTURE_3D, clut3DTexture);
-		tonemapShader.setInt("colorLUT3D", 2);
+		// Set CLUT textures
+		tonemapShader.setTexture("colorLUT1D", clut1DTexture, 1);
+		tonemapShader.setTexture("colorLUT3D", clut3DTexture, 2);
 
 		// Set tone mapping parameters
-		GLint exposureLoc = tonemapShader.getUniformLocation("exposure");
-		if (exposureLoc != -1)
-			glUniform1f(exposureLoc, exposure);
+		tonemapShader.setUniform("exposure", &exposure);
+		tonemapShader.setUniform("clutStrength", &clutStrength);
 
-		GLint clutStrengthLoc = tonemapShader.getUniformLocation("clutStrength");
-		if (clutStrengthLoc != -1)
-			glUniform1f(clutStrengthLoc, clutStrength);
+		int tonemapOp = tonemapOperator;
+		tonemapShader.setUniform("tonemapOperator", &tonemapOp, 1);
 
-		GLint tonemapOperatorLoc = tonemapShader.getUniformLocation("tonemapOperator");
-		if (tonemapOperatorLoc != -1)
-			glUniform1i(tonemapOperatorLoc, tonemapOperator);
+		int splitScreenInt = splitScreen ? 1 : 0;
+		tonemapShader.setUniform("splitScreen", &splitScreenInt, 1);
 
-		GLint splitScreenLoc = tonemapShader.getUniformLocation("splitScreen");
-		if (splitScreenLoc != -1)
-			glUniform1i(splitScreenLoc, splitScreen ? 1 : 0);
+		tonemapShader.setUniform("splitPosition", &splitPosition);
 
-		GLint splitPositionLoc = tonemapShader.getUniformLocation("splitPosition");
-		if (splitPositionLoc != -1)
-			glUniform1f(splitPositionLoc, splitPosition);
+		int showClutInt = showClut ? 1 : 0;
+		tonemapShader.setUniform("showClut", &showClutInt, 1);
 
-		GLint showClutLoc = tonemapShader.getUniformLocation("showClut");
-		if (showClutLoc != -1)
-			glUniform1i(showClutLoc, showClut ? 1 : 0);
+		int applyClutInt = applyClut ? 1 : 0;
+		tonemapShader.setUniform("applyClut", &applyClutInt, 1);
 
-		GLint applyClutLoc = tonemapShader.getUniformLocation("applyClut");
-		if (applyClutLoc != -1)
-			glUniform1i(applyClutLoc, applyClut ? 1 : 0);
+		int use3DCLUTInt = use3DCLUT ? 1 : 0;
+		tonemapShader.setUniform("use3DCLUT", &use3DCLUTInt, 1);
 
-		GLint use3DCLUTLoc = tonemapShader.getUniformLocation("use3DCLUT");
-		if (use3DCLUTLoc != -1)
-			glUniform1i(use3DCLUTLoc, use3DCLUT ? 1 : 0);
+		int clutSize = currentClut.getSize();
+		tonemapShader.setUniform("clutSize", &clutSize, 1);
 
-		GLint clutSizeLoc = tonemapShader.getUniformLocation("clutSize");
-		if (clutSizeLoc != -1)
-			glUniform1i(clutSizeLoc, currentClut.getSize());
-
-		GLUtils::checkGLError("setting tonemap shader uniforms");
-
-		// Draw fullscreen quad
-		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-		GLUtils::checkGLError("drawing post-process quad");
-
-		// Unbind VAO and program
-		glBindVertexArray(0);
-		GLUtils::checkGLError("unbinding VAO");
-		glUseProgram(0);
-		GLUtils::checkGLError("unbinding shader program");
+		// Draw screen quad with tonemap shader
+		screenQuad.draw(tonemapShader);
 
 		// Start ImGui frame
-		ImGui_ImplOpenGL3_NewFrame();
-		ImGui_ImplGlfw_NewFrame();
+		ImGui_ImplBgfx_NewFrame();
 		ImGui::NewFrame();
 
 		// Render the modern ImGui interface with dockspace
@@ -361,66 +373,46 @@ int main()
 
 		// Render ImGui
 		ImGui::Render();
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+		ImGui_ImplBgfx_RenderDrawData(ImGui::GetDrawData());
 
-		// Swap buffers and poll events
-		glfwSwapBuffers(window);
-		glfwPollEvents();
+		// End bgfx frame
+		BgfxUtils::endFrame();
+
+		// Poll events
+		// Replace glfwPollEvents() with a custom event polling mechanism if needed
 	}
 
 	// Cleanup
-	ImGui_ImplOpenGL3_Shutdown();
-	ImGui_ImplGlfw_Shutdown();
+	ImGui_ImplBgfx_Shutdown();
 	ImGui::DestroyContext();
 
-	// Delete both 1D and 3D CLUT textures
-	glDeleteTextures(1, &clut1DTexture);
-	glDeleteTextures(1, &clut3DTexture);
+	// Delete CLUT textures
+	if (bgfx::isValid(clut1DTexture))
+	{
+		bgfx::destroy(clut1DTexture);
+	}
 
-	glfwTerminate();
+	if (bgfx::isValid(clut3DTexture))
+	{
+		bgfx::destroy(clut3DTexture);
+	}
+
+	// Clean up geometry
+	cube.~Geometry();
+	sphere.~Geometry();
+	plane.~Geometry();
+	screenQuad.~Geometry();
+
+	// Clean up framebuffer
+	hdrFramebuffer.cleanup();
+
+	// Shutdown bgfx
+	BgfxUtils::shutdown();
+
 	return 0;
 }
 
-GLFWwindow* initializeWindow()
-{
-	// Initialize GLFW
-	if (!glfwInit())
-	{
-		std::cerr << "Failed to initialize GLFW" << std::endl;
-		return nullptr;
-	}
-
-	// Configure GLFW
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-	// Create window
-	GLFWwindow* window = glfwCreateWindow(windowWidth, windowHeight, "Render Alchemy", NULL, NULL);
-	if (!window)
-	{
-		std::cerr << "Failed to create GLFW window" << std::endl;
-		glfwTerminate();
-		return nullptr;
-	}
-	glfwMakeContextCurrent(window);
-	glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
-
-	// Initialize GLEW
-	glewExperimental = GL_TRUE;
-	if (glewInit() != GLEW_OK)
-	{
-		std::cerr << "Failed to initialize GLEW" << std::endl;
-		return nullptr;
-	}
-
-	// Enable depth testing
-	glEnable(GL_DEPTH_TEST);
-
-	return window;
-}
-
-void initImGui(GLFWwindow* window)
+void initImGui()
 {
 	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
@@ -439,15 +431,13 @@ void initImGui(GLFWwindow* window)
 	// Apply Gruvbox theme
 	ImGuiUtils::SetGruvboxTheme();
 
-	// Setup Platform/Renderer backends
-	ImGui_ImplGlfw_InitForOpenGL(window, true);
-	ImGui_ImplOpenGL3_Init("#version 330");
+	// Setup Platform/Renderer backends - using bgfx instead of OpenGL
+	ImGui_ImplBgfx_Init(kPostProcessView); // Use bgfx renderer
 }
 
-void framebufferSizeCallback(GLFWwindow* window, int width, int height)
+void framebufferSizeCallback(int width, int height)
 {
 	// Update viewport when window is resized
-	glViewport(0, 0, width, height);
 	windowWidth = width;
 	windowHeight = height;
 	framebufferResized = true;
@@ -455,13 +445,23 @@ void framebufferSizeCallback(GLFWwindow* window, int width, int height)
 
 void processInput(GLFWwindow* window)
 {
-	// Close window on ESC key press
+	glfwPollEvents();
+
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+	{
 		glfwSetWindowShouldClose(window, true);
+	}
+
+	// If the user wants to close the window
+	if (glfwWindowShouldClose(window))
+	{
+		glfwTerminate();
+		exit(EXIT_SUCCESS);
+	}
 }
 
-// Render the modern ImGui interface
-void renderImGuiInterface(std::map<std::string, CLUT>& clutLibrary, CLUT& currentClut, const char*& currentPreset, GLuint& clut1DTexture, GLuint& clut3DTexture, bool& use3DCLUT, char* customLutName, bool& editingMode, float* cameraPos)
+// Render the modern ImGui interface - updated parameter types for bgfx
+void renderImGuiInterface(std::map<std::string, CLUT>& clutLibrary, CLUT& currentClut, const char*& currentPreset, bgfx::TextureHandle& clut1DTexture, bgfx::TextureHandle& clut3DTexture, bool& use3DCLUT, char* customLutName, bool& editingMode, float* cameraPos)
 {
 	// Tools panel (control panel)
 	if (showToolsWindow)
@@ -717,13 +717,30 @@ void renderImGuiInterface(std::map<std::string, CLUT>& clutLibrary, CLUT& curren
 							// Update appropriate texture based on CLUT type
 							if (use3DCLUT)
 							{
-								glDeleteTextures(1, &clut3DTexture);
-								clut3DTexture = CLUT::create3DCLUT(currentClut.getData(), currentClut.getSize());
+								bgfx::destroy(clut3DTexture);
+								std::vector<float> clutDataWithAlpha3D(currentClut.getSize() * currentClut.getSize() * currentClut.getSize() * 4);
+								for (int i = 0; i < currentClut.getSize() * currentClut.getSize() * currentClut.getSize(); ++i)
+								{
+									clutDataWithAlpha3D[i * 4 + 0] = currentClut.getData()[i * 3 + 0];
+									clutDataWithAlpha3D[i * 4 + 1] = currentClut.getData()[i * 3 + 1];
+									clutDataWithAlpha3D[i * 4 + 2] = currentClut.getData()[i * 3 + 2];
+									clutDataWithAlpha3D[i * 4 + 3] = 1.0f; // Set alpha to 1.0
+								}
+								const bgfx::Memory* mem3D = bgfx::copy(clutDataWithAlpha3D.data(), clutDataWithAlpha3D.size() * sizeof(float));
+								clut3DTexture = bgfx::createTexture3D(currentClut.getSize(), currentClut.getSize(), currentClut.getSize(), false, bgfx::TextureFormat::RGBA32F, BGFX_TEXTURE_NONE, mem3D);
 							}
 							else
 							{
-								glDeleteTextures(1, &clut1DTexture);
-								clut1DTexture = CLUT::create1DCLUT(currentClut.getData(), currentClut.getSize());
+								bgfx::destroy(clut1DTexture);
+								std::vector<float> clutDataWithAlpha(currentClut.getSize() * 4);
+								for (int i = 0; i < currentClut.getSize(); ++i) {
+									clutDataWithAlpha[i * 4 + 0] = currentClut.getData()[i * 3 + 0];
+									clutDataWithAlpha[i * 4 + 1] = currentClut.getData()[i * 3 + 1];
+									clutDataWithAlpha[i * 4 + 2] = currentClut.getData()[i * 3 + 2];
+									clutDataWithAlpha[i * 4 + 3] = 1.0f; // Set alpha to 1.0
+								}
+								const bgfx::Memory* mem1D = bgfx::copy(clutDataWithAlpha.data(), clutDataWithAlpha.size() * sizeof(float));
+								clut1DTexture = bgfx::createTexture2D(currentClut.getSize(), 1, false, 1, bgfx::TextureFormat::RGBA32F, BGFX_TEXTURE_NONE, mem1D);
 							}
 
 							// Reset CLUT editing parameters when selecting a preset
@@ -788,14 +805,31 @@ void renderImGuiInterface(std::map<std::string, CLUT>& clutLibrary, CLUT& curren
 						if (loadedClut.is3DCLUT())
 						{
 							use3DCLUT = true;
-							glDeleteTextures(1, &clut3DTexture);
-							clut3DTexture = CLUT::create3DCLUT(loadedClut.getData(), loadedClut.getSize());
+							bgfx::destroy(clut3DTexture);
+							std::vector<float> clutDataWithAlpha3D(currentClut.getSize() * currentClut.getSize() * currentClut.getSize() * 4);
+							for (int i = 0; i < currentClut.getSize() * currentClut.getSize() * currentClut.getSize(); ++i)
+							{
+								clutDataWithAlpha3D[i * 4 + 0] = currentClut.getData()[i * 3 + 0];
+								clutDataWithAlpha3D[i * 4 + 1] = currentClut.getData()[i * 3 + 1];
+								clutDataWithAlpha3D[i * 4 + 2] = currentClut.getData()[i * 3 + 2];
+								clutDataWithAlpha3D[i * 4 + 3] = 1.0f; // Set alpha to 1.0
+							}
+							const bgfx::Memory* mem3D = bgfx::copy(clutDataWithAlpha3D.data(), clutDataWithAlpha3D.size() * sizeof(float));
+							clut3DTexture = bgfx::createTexture3D(currentClut.getSize(), currentClut.getSize(), currentClut.getSize(), false, bgfx::TextureFormat::RGBA32F, BGFX_TEXTURE_NONE, mem3D);
 						}
 						else
 						{
 							use3DCLUT = false;
-							glDeleteTextures(1, &clut1DTexture);
-							clut1DTexture = CLUT::create1DCLUT(loadedClut.getData(), loadedClut.getSize());
+							bgfx::destroy(clut1DTexture);
+							std::vector<float> clutDataWithAlpha(currentClut.getSize() * 4);
+							for (int i = 0; i < currentClut.getSize(); ++i) {
+								clutDataWithAlpha[i * 4 + 0] = currentClut.getData()[i * 3 + 0];
+								clutDataWithAlpha[i * 4 + 1] = currentClut.getData()[i * 3 + 1];
+								clutDataWithAlpha[i * 4 + 2] = currentClut.getData()[i * 3 + 2];
+								clutDataWithAlpha[i * 4 + 3] = 1.0f; // Set alpha to 1.0
+							}
+							const bgfx::Memory* mem1D = bgfx::copy(clutDataWithAlpha.data(), clutDataWithAlpha.size() * sizeof(float));
+							clut1DTexture = bgfx::createTexture2D(currentClut.getSize(), 1, false, 1, bgfx::TextureFormat::RGBA32F, BGFX_TEXTURE_NONE, mem1D);
 						}
 
 						ImGui::OpenPopup("CLUT Loaded");
@@ -912,14 +946,31 @@ void renderImGuiInterface(std::map<std::string, CLUT>& clutLibrary, CLUT& curren
 						if (use3DCLUT)
 						{
 							currentClut = clutLibrary["Neutral (3D)"];
-							glDeleteTextures(1, &clut3DTexture);
-							clut3DTexture = CLUT::create3DCLUT(currentClut.getData(), currentClut.getSize());
+							bgfx::destroy(clut3DTexture);
+							std::vector<float> clutDataWithAlpha3D(currentClut.getSize() * currentClut.getSize() * currentClut.getSize() * 4);
+							for (int i = 0; i < currentClut.getSize() * currentClut.getSize() * currentClut.getSize(); ++i)
+							{
+								clutDataWithAlpha3D[i * 4 + 0] = currentClut.getData()[i * 3 + 0];
+								clutDataWithAlpha3D[i * 4 + 1] = currentClut.getData()[i * 3 + 1];
+								clutDataWithAlpha3D[i * 4 + 2] = currentClut.getData()[i * 3 + 2];
+								clutDataWithAlpha3D[i * 4 + 3] = 1.0f; // Set alpha to 1.0
+							}
+							const bgfx::Memory* mem3D = bgfx::copy(clutDataWithAlpha3D.data(), clutDataWithAlpha3D.size() * sizeof(float));
+							clut3DTexture = bgfx::createTexture3D(currentClut.getSize(), currentClut.getSize(), currentClut.getSize(), false, bgfx::TextureFormat::RGBA32F, BGFX_TEXTURE_NONE, mem3D);
 						}
 						else
 						{
 							currentClut = clutLibrary["Neutral (1D)"];
-							glDeleteTextures(1, &clut1DTexture);
-							clut1DTexture = CLUT::create1DCLUT(currentClut.getData(), currentClut.getSize());
+							bgfx::destroy(clut1DTexture);
+							std::vector<float> clutDataWithAlpha(currentClut.getSize() * 4);
+							for (int i = 0; i < currentClut.getSize(); ++i) {
+								clutDataWithAlpha[i * 4 + 0] = currentClut.getData()[i * 3 + 0];
+								clutDataWithAlpha[i * 4 + 1] = currentClut.getData()[i * 3 + 1];
+								clutDataWithAlpha[i * 4 + 2] = currentClut.getData()[i * 3 + 2];
+								clutDataWithAlpha[i * 4 + 3] = 1.0f; // Set alpha to 1.0
+							}
+							const bgfx::Memory* mem1D = bgfx::copy(clutDataWithAlpha.data(), clutDataWithAlpha.size() * sizeof(float));
+							clut1DTexture = bgfx::createTexture2D(currentClut.getSize(), 1, false, 1, bgfx::TextureFormat::RGBA32F, BGFX_TEXTURE_NONE, mem1D);
 						}
 
 						// Update current preset name
@@ -1000,7 +1051,7 @@ void renderImGuiInterface(std::map<std::string, CLUT>& clutLibrary, CLUT& curren
 
 				ImGui::BeginChild("AboutInfo", ImVec2(fullControlWidth, 80), true);
 				ImGui::TextColored(ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "About");
-				ImGui::TextWrapped("CLUT Demo v1.0.0\nCopyright © 2023");
+				ImGui::TextWrapped("CLUT Demo v1.0.0\nBrought to you by bingus and friends");
 				ImGui::EndChild();
 
 				ImGui::EndTabItem();

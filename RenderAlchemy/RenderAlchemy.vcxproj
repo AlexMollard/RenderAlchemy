@@ -47,8 +47,10 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;BX_CONFIG_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalOptions>/Zc:__cplusplus /Zc:preprocessor %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -61,8 +63,10 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;BX_CONFIG_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalOptions>/Zc:__cplusplus /Zc:preprocessor %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -73,10 +77,33 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\clut\CLUT.cpp" />
+    <ClCompile Include="src\imgui\imgui_impl_bgfx.cpp" />
+    <ClCompile Include="src\meshoptimizer\allocator.cpp" />
+    <ClCompile Include="src\meshoptimizer\clusterizer.cpp" />
+    <ClCompile Include="src\meshoptimizer\indexcodec.cpp" />
+    <ClCompile Include="src\meshoptimizer\indexgenerator.cpp" />
+    <ClCompile Include="src\meshoptimizer\overdrawanalyzer.cpp" />
+    <ClCompile Include="src\meshoptimizer\overdrawoptimizer.cpp" />
+    <ClCompile Include="src\meshoptimizer\partition.cpp" />
+    <ClCompile Include="src\meshoptimizer\quantization.cpp" />
+    <ClCompile Include="src\meshoptimizer\simplifier.cpp" />
+    <ClCompile Include="src\meshoptimizer\spatialorder.cpp" />
+    <ClCompile Include="src\meshoptimizer\stripifier.cpp" />
+    <ClCompile Include="src\meshoptimizer\vcacheanalyzer.cpp" />
+    <ClCompile Include="src\meshoptimizer\vcacheoptimizer.cpp" />
+    <ClCompile Include="src\meshoptimizer\vertexcodec.cpp" />
+    <ClCompile Include="src\meshoptimizer\vertexfilter.cpp" />
+    <ClCompile Include="src\meshoptimizer\vfetchanalyzer.cpp" />
+    <ClCompile Include="src\meshoptimizer\vfetchoptimizer.cpp" />
+    <ClCompile Include="src\renderer\BgfxUtils.cpp" />
+    <ClCompile Include="src\renderer\bgfx_utils.cpp" />
+    <ClCompile Include="src\renderer\cmd.cpp" />
+    <ClCompile Include="src\renderer\entry.cpp" />
+    <ClCompile Include="src\renderer\entry_windows.cpp" />
     <ClCompile Include="src\renderer\Framebuffer.cpp" />
     <ClCompile Include="src\renderer\Geometry.cpp" />
-    <ClCompile Include="src\renderer\GLUtils.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\renderer\input.cpp" />
     <ClCompile Include="src\renderer\Shader.cpp" />
     <ClCompile Include="src\ui\ImGuiUtils.cpp" />
   </ItemGroup>
@@ -85,32 +112,21 @@
     <ClInclude Include="src\fonts\FontDefinitions.h" />
     <ClInclude Include="src\fonts\RobotoBold.h" />
     <ClInclude Include="src\fonts\RobotoRegular.h" />
+    <ClInclude Include="src\imgui\imgui_impl_bgfx.h" />
+    <ClInclude Include="src\meshoptimizer\meshoptimizer.h" />
+    <ClInclude Include="src\renderer\BgfxUtils.h" />
+    <ClInclude Include="src\renderer\bgfx_utils.h" />
+    <ClInclude Include="src\renderer\cmd.h" />
+    <ClInclude Include="src\renderer\entry.h" />
+    <ClInclude Include="src\renderer\entry_p.h" />
     <ClInclude Include="src\renderer\Framebuffer.h" />
     <ClInclude Include="src\renderer\Geometry.h" />
-    <ClInclude Include="src\renderer\GLUtils.h" />
+    <ClInclude Include="src\renderer\input.h" />
     <ClInclude Include="src\renderer\Shader.h" />
     <ClInclude Include="src\scene\Camera.h" />
     <ClInclude Include="src\scene\SceneManager.h" />
     <ClInclude Include="src\fonts\IconsLucide.h" />
     <ClInclude Include="src\ui\ImGuiUtils.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="shaders\scene.frag">
-      <FileType>Document</FileType>
-      <DeploymentContent>true</DeploymentContent>
-    </None>
-    <None Include="shaders\scene.vert">
-      <FileType>Document</FileType>
-      <DeploymentContent>true</DeploymentContent>
-    </None>
-    <None Include="shaders\tonemap.frag">
-      <FileType>Document</FileType>
-      <DeploymentContent>true</DeploymentContent>
-    </None>
-    <None Include="shaders\tonemap.vert">
-      <FileType>Document</FileType>
-      <DeploymentContent>true</DeploymentContent>
-    </None>
   </ItemGroup>
   <ItemGroup>
     <Font Include="src\fonts\lucide.ttf">
@@ -120,4 +136,21 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
+  <PropertyGroup>
+    <VcpkgTriplet Condition="'$(Platform)'=='x64'">x64-windows</VcpkgTriplet>
+    <VcpkgTriplet Condition="'$(Platform)'=='Win32'">x86-windows</VcpkgTriplet>
+    <VcpkgApplocalDeps>True</VcpkgApplocalDeps>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ShaderOutputDir>$(ProjectDir)shaders\</ShaderOutputDir>
+  </PropertyGroup>
+  <Target Name="CompileShaders" BeforeTargets="ClCompile">
+    <ItemGroup>
+      <ShaderFiles Include="$(ProjectDir)**\*.vert;$(ProjectDir)**\*.frag;$(ProjectDir)**\*.comp" />
+    </ItemGroup>
+    <MakeDir Directories="$(ShaderOutputDir)" />
+    <Exec Command="glslc.exe -fshader-stage=vertex -o $(ShaderOutputDir)%(ShaderFiles.Filename).spv %(ShaderFiles.FullPath)" Condition="'%(ShaderFiles.Extension)'=='.vert'" />
+    <Exec Command="glslc.exe -fshader-stage=fragment -o $(ShaderOutputDir)%(ShaderFiles.Filename).spv %(ShaderFiles.FullPath)" Condition="'%(ShaderFiles.Extension)'=='.frag'" />
+    <Exec Command="glslc.exe -fshader-stage=compute -o $(ShaderOutputDir)%(ShaderFiles.Filename).spv %(ShaderFiles.FullPath)" Condition="'%(ShaderFiles.Extension)'=='.comp'" />
+  </Target>
 </Project>

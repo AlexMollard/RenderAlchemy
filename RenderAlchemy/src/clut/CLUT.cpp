@@ -6,7 +6,7 @@
 #include <sstream>
 #include <stdexcept>
 
-#include "../renderer/GLUtils.h"
+#include "../renderer/BgfxUtils.h"
 
 CLUT::CLUT()
       : name(""), size(0), is3D(false)
@@ -272,118 +272,66 @@ CLUT CLUT::loadFromFile(const std::string& filename)
 	return result;
 }
 
-GLuint CLUT::create1DTexture() const
+bgfx::TextureHandle CLUT::create1DTexture() const
 {
 	if (is3D)
 	{
 		throw std::runtime_error("Attempted to create 1D texture from 3D CLUT data");
 	}
 
-	// Create OpenGL texture
-	GLuint textureID;
-	glGenTextures(1, &textureID);
+	// Create bgfx texture
+	bgfx::TextureHandle texture = bgfx::createTexture2D(size, 1, false, 1, bgfx::TextureFormat::RGBA32F, BGFX_TEXTURE_NONE, bgfx::copy(data.data(), size * 3 * sizeof(float)));
 
-	glBindTexture(GL_TEXTURE_1D, textureID);
-
-	// Set texture parameters
-	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-	// Upload the color table
-	glTexImage1D(GL_TEXTURE_1D, 0, GL_RGB, size, 0, GL_RGB, GL_FLOAT, data.data());
-
-	GLenum error = glGetError();
-	if (error != GL_NO_ERROR)
+	if (!bgfx::isValid(texture))
 	{
-		glDeleteTextures(1, &textureID);
-		throw std::runtime_error("OpenGL error while creating 1D CLUT texture: " + std::to_string(error));
+		throw std::runtime_error("bgfx error while creating 1D CLUT texture");
 	}
 
-	return textureID;
+	return texture;
 }
 
-GLuint CLUT::create3DTexture() const
+bgfx::TextureHandle CLUT::create3DTexture() const
 {
 	if (!is3D)
 	{
 		throw std::runtime_error("Attempted to create 3D texture from 1D CLUT data");
 	}
 
-	// Create OpenGL texture
-	GLuint textureID;
-	glGenTextures(1, &textureID);
+	// Create bgfx texture
+	bgfx::TextureHandle texture = bgfx::createTexture3D(size, size, size, false, bgfx::TextureFormat::RGBA32F, BGFX_TEXTURE_NONE, bgfx::copy(data.data(), size * size * size * 3 * sizeof(float)));
 
-	glBindTexture(GL_TEXTURE_3D, textureID);
-
-	// Set texture parameters
-	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-	// Upload the 3D color table
-	glTexImage3D(GL_TEXTURE_3D, 0, GL_RGB, size, size, size, 0, GL_RGB, GL_FLOAT, data.data());
-
-	GLenum error = glGetError();
-	if (error != GL_NO_ERROR)
+	if (!bgfx::isValid(texture))
 	{
-		glDeleteTextures(1, &textureID);
-		throw std::runtime_error("OpenGL error while creating 3D CLUT texture: " + std::to_string(error));
+		throw std::runtime_error("bgfx error while creating 3D CLUT texture");
 	}
 
-	return textureID;
+	return texture;
 }
 
-// Create a 1D CLUT texture
-GLuint CLUT::create1DCLUT(const std::vector<float>& clutData, int size)
+bgfx::TextureHandle CLUT::create1DCLUT(const std::vector<float>& clutData, int size)
 {
-	// Create OpenGL texture
-	GLuint textureID;
-	glGenTextures(1, &textureID);
-	GLUtils::checkGLError("1D CLUT texture generation");
+	// Create bgfx texture
+	bgfx::TextureHandle texture = bgfx::createTexture2D(size, 1, false, 1, bgfx::TextureFormat::RGBA32F, BGFX_TEXTURE_NONE, bgfx::copy(clutData.data(), size * 3 * sizeof(float)));
 
-	glBindTexture(GL_TEXTURE_1D, textureID);
-	GLUtils::checkGLError("1D CLUT texture binding");
+	if (!bgfx::isValid(texture))
+	{
+		throw std::runtime_error("bgfx error while creating 1D CLUT texture");
+	}
 
-	// Set texture parameters
-	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	GLUtils::checkGLError("1D CLUT texture parameter setting");
-
-	// Upload the color table
-	glTexImage1D(GL_TEXTURE_1D, 0, GL_RGB, size, 0, GL_RGB, GL_FLOAT, clutData.data());
-	GLUtils::checkGLError("1D CLUT texture data upload");
-
-	return textureID;
+	return texture;
 }
 
-// Create a 3D CLUT texture
-GLuint CLUT::create3DCLUT(const std::vector<float>& clutData, int size)
+bgfx::TextureHandle CLUT::create3DCLUT(const std::vector<float>& clutData, int size)
 {
-	// Create OpenGL texture
-	GLuint textureID;
-	glGenTextures(1, &textureID);
-	GLUtils::checkGLError("3D CLUT texture generation");
+	// Create bgfx texture
+	bgfx::TextureHandle texture = bgfx::createTexture3D(size, size, size, false, bgfx::TextureFormat::RGBA32F, BGFX_TEXTURE_NONE, bgfx::copy(clutData.data(), size * size * size * 3 * sizeof(float)));
 
-	glBindTexture(GL_TEXTURE_3D, textureID);
-	GLUtils::checkGLError("3D CLUT texture binding");
+	if (!bgfx::isValid(texture))
+	{
+		throw std::runtime_error("bgfx error while creating 3D CLUT texture");
+	}
 
-	// Set texture parameters
-	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	GLUtils::checkGLError("3D CLUT texture parameter setting");
-
-	// Upload the 3D color table
-	glTexImage3D(GL_TEXTURE_3D, 0, GL_RGB, size, size, size, 0, GL_RGB, GL_FLOAT, clutData.data());
-	GLUtils::checkGLError("3D CLUT texture data upload");
-
-	return textureID;
+	return texture;
 }
 
 void CLUT::createPreset1DCLUTs(std::map<std::string, CLUT>& clutLibrary)

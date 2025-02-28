@@ -1,6 +1,6 @@
 #pragma once
 
-#include <GL/glew.h>
+#include <bgfx/bgfx.h>
 #include <map>
 #include <string>
 #include <vector>
@@ -28,13 +28,13 @@ public:
 	void saveToFile(const std::string& filename) const;
 	static CLUT loadFromFile(const std::string& filename);
 
-	// Create OpenGL texture from CLUT data
-	GLuint create1DTexture() const;
-	GLuint create3DTexture() const;
+	// Create bgfx texture from CLUT data
+	bgfx::TextureHandle create1DTexture() const;
+	bgfx::TextureHandle create3DTexture() const;
 
-	// OpenGL texture creation helpers
-	static GLuint create1DCLUT(const std::vector<float>& clutData, int size);
-	static GLuint create3DCLUT(const std::vector<float>& clutData, int size);
+	// bgfx texture creation helpers
+	static bgfx::TextureHandle create1DCLUT(const std::vector<float>& clutData, int size);
+	static bgfx::TextureHandle create3DCLUT(const std::vector<float>& clutData, int size);
 
 	// Presets
 	static void createPreset1DCLUTs(std::map<std::string, CLUT>& clutLibrary);

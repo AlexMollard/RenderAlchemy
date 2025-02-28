@@ -1,161 +1,138 @@
 #include "Shader.h"
-
+#include <fstream>
+#include <vector>
 #include <iostream>
+#include <bx/readerwriter.h>
 
-#include "GLUtils.h"
+Shader::Shader(const std::string& vertexPath, const std::string& fragmentPath) {
+    compileShader(vertexPath, "vertex.bin");
+    compileShader(fragmentPath, "fragment.bin");
 
-Shader::Shader()
-      : programID(0)
-{
+    bgfx::ShaderHandle vsh = loadShader("vertex.bin");
+    bgfx::ShaderHandle fsh = loadShader("fragment.bin");
+
+    m_program = bgfx::createProgram(vsh, fsh, true);
 }
 
-Shader::~Shader()
-{
-	if (programID != 0)
-	{
-		glDeleteProgram(programID);
-		programID = 0;
-	}
+Shader::~Shader() {
+    bgfx::destroy(m_program);
+    for (auto& pair : m_uniforms) {
+        bgfx::destroy(pair.second);
+    }
 }
 
-bool Shader::createFromStrings(const char* vertexCode, const char* fragmentCode)
-{
-	try
-	{
-		compileShader(vertexCode, fragmentCode);
-		return true;
-	}
-	catch (const std::exception& e)
-	{
-		std::cerr << "ERROR::SHADER::CREATION_FAILED\n" << e.what() << std::endl;
-		return false;
-	}
+void Shader::setUniform(const std::string& name, const void* value, uint16_t num) {
+    bgfx::setUniform(getUniform(name), value, num);
 }
 
-bool Shader::createFromPaths(const char* vertexPath, const char* fragmentPath)
+void Shader::setTexture(const std::string& name, bgfx::TextureHandle texture, uint8_t stage)
 {
-	std::string vertexCode;
-	std::string fragmentCode;
-
-	try
-	{
-		vertexCode = GLUtils::readFile(vertexPath);
-		fragmentCode = GLUtils::readFile(fragmentPath);
-	}
-	catch (const std::exception& e)
-	{
-		std::cerr << "ERROR::SHADER::FILE_NOT_SUCCESFULLY_READ\n" << e.what() << std::endl;
-		return false;
-	}
-
-	return createFromStrings(vertexCode.c_str(), fragmentCode.c_str());
+	bgfx::setTexture(stage, getUniform(name), texture);
 }
 
-void Shader::compileShader(const char* vertexCode, const char* fragmentCode)
+static const bgfx::Memory* loadMem(bx::FileReaderI* _reader, const bx::FilePath& _filePath)
 {
-	// Create shader program
-	programID = glCreateProgram();
-
-	if (!programID)
+	if (bx::open(_reader, _filePath))
 	{
-		std::cerr << "Error creating shader program!" << std::endl;
-		return;
+		uint32_t size = (uint32_t) bx::getSize(_reader);
+		const bgfx::Memory* mem = bgfx::alloc(size + 1);
+		bx::read(_reader, mem->data, size, bx::ErrorAssert{});
+		bx::close(_reader);
+		mem->data[mem->size - 1] = '\0';
+		return mem;
 	}
 
-	// Create and compile vertex shader
-	GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-	glShaderSource(vertexShader, 1, &vertexCode, NULL);
-	glCompileShader(vertexShader);
-	checkCompileErrors(vertexShader, "VERTEX");
-
-	// Create and compile fragment shader
-	GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-	glShaderSource(fragmentShader, 1, &fragmentCode, NULL);
-	glCompileShader(fragmentShader);
-	checkCompileErrors(fragmentShader, "FRAGMENT");
-
-	// Link shaders
-	glAttachShader(programID, vertexShader);
-	glAttachShader(programID, fragmentShader);
-	glLinkProgram(programID);
-	checkCompileErrors(programID, "PROGRAM");
-
-	// Delete shaders after linking
-	glDeleteShader(vertexShader);
-	glDeleteShader(fragmentShader);
+	std::cout << "Failed to load" << _filePath.getCPtr() << std::endl;
+	return NULL;
 }
 
-void Shader::checkCompileErrors(GLuint shader, std::string type)
-{
-	GLint success;
-	GLchar infoLog[1024];
 
-	if (type != "PROGRAM")
+static void* loadMem(bx::FileReaderI* _reader, bx::AllocatorI* _allocator, const bx::FilePath& _filePath, uint32_t* _size)
+{
+	if (bx::open(_reader, _filePath))
 	{
-		glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-		if (!success)
+		uint32_t size = (uint32_t) bx::getSize(_reader);
+		void* data = bx::alloc(_allocator, size);
+		bx::read(_reader, data, size, bx::ErrorAssert{});
+		bx::close(_reader);
+
+		if (NULL != _size)
 		{
-			glGetShaderInfoLog(shader, 1024, NULL, infoLog);
-			throw std::runtime_error("ERROR::SHADER_COMPILATION_ERROR of type: " + type + "\n" + infoLog);
+			*_size = size;
 		}
+		return data;
 	}
-	else
+
+	std::cout << "Failed to load" << _filePath.getCPtr() << std::endl;
+	return NULL;
+}
+
+
+static bgfx::ShaderHandle loadShader(bx::FileReaderI* _reader, const bx::StringView& _name)
+{
+	bx::FilePath filePath("shaders/");
+
+	switch (bgfx::getRendererType())
 	{
-		glGetProgramiv(shader, GL_LINK_STATUS, &success);
-		if (!success)
-		{
-			glGetProgramInfoLog(shader, 1024, NULL, infoLog);
-			throw std::runtime_error("ERROR::PROGRAM_LINKING_ERROR of type: " + type + "\n" + infoLog);
-		}
+		case bgfx::RendererType::Noop:
+		case bgfx::RendererType::Direct3D11:
+		case bgfx::RendererType::Direct3D12:
+			filePath.join("dx11");
+			break;
+		case bgfx::RendererType::Agc:
+		case bgfx::RendererType::Gnm:
+			filePath.join("pssl");
+			break;
+		case bgfx::RendererType::Metal:
+			filePath.join("metal");
+			break;
+		case bgfx::RendererType::Nvn:
+			filePath.join("nvn");
+			break;
+		case bgfx::RendererType::OpenGL:
+			filePath.join("glsl");
+			break;
+		case bgfx::RendererType::OpenGLES:
+			filePath.join("essl");
+			break;
+		case bgfx::RendererType::Vulkan:
+			filePath.join("spirv");
+			break;
+
+		case bgfx::RendererType::Count:
+			BX_ASSERT(false, "You should not be here!");
+			break;
 	}
+
+	char fileName[512];
+	bx::strCopy(fileName, BX_COUNTOF(fileName), _name);
+	bx::strCat(fileName, BX_COUNTOF(fileName), ".bin");
+
+	filePath.join(fileName);
+
+	bgfx::ShaderHandle handle = bgfx::createShader(loadMem(_reader, filePath.getCPtr()));
+	bgfx::setName(handle, _name.getPtr(), _name.getLength());
+
+	return handle;
 }
 
-void Shader::use() const
+bgfx::ShaderHandle Shader::loadShader(const std::string& path)
 {
-	glUseProgram(programID);
+	return bgfx::ShaderHandle();
 }
 
-GLuint Shader::getProgramID() const
+void Shader::compileShader(const std::string& path, const std::string& output)
 {
-	return programID;
 }
 
-void Shader::setBool(const char* name, bool value) const
+bgfx::UniformHandle Shader::getUniform(const std::string& name)
 {
-	glUniform1i(glGetUniformLocation(programID, name), (int) value);
-}
+    auto it = m_uniforms.find(name);
+    if (it != m_uniforms.end()) {
+        return it->second;
+    }
 
-void Shader::setInt(const char* name, int value) const
-{
-	glUniform1i(glGetUniformLocation(programID, name), value);
-}
-
-void Shader::setFloat(const char* name, float value) const
-{
-	glUniform1f(glGetUniformLocation(programID, name), value);
-}
-
-void Shader::setVec2(const char* name, float x, float y) const
-{
-	glUniform2f(glGetUniformLocation(programID, name), x, y);
-}
-
-void Shader::setVec3(const char* name, float x, float y, float z) const
-{
-	glUniform3f(glGetUniformLocation(programID, name), x, y, z);
-}
-
-void Shader::setVec4(const char* name, float x, float y, float z, float w) const
-{
-	glUniform4f(glGetUniformLocation(programID, name), x, y, z, w);
-}
-
-void Shader::setMat4(const char* name, const float* value) const
-{
-	glUniformMatrix4fv(glGetUniformLocation(programID, name), 1, GL_FALSE, value);
-}
-
-GLint Shader::getUniformLocation(const char* name) const
-{
-	return glGetUniformLocation(programID, name);
+    bgfx::UniformHandle uniform = bgfx::createUniform(name.c_str(), bgfx::UniformType::Vec4);
+    m_uniforms[name] = uniform;
+    return uniform;
 }
